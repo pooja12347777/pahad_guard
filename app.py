@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from dotenv import load_dotenv
 from streamlit_folium import st_folium
 
 from dashboard.components import (
@@ -12,6 +13,8 @@ from dashboard.components import (
     render_metric_cards,
     render_risk_gauge,
 )
+from dashboard.theme import inject_theme, risk_badge_html
+from src.auth.login_ui import require_login, render_logout_control
 from src.config import DATA_FILE, MODEL_FILE, PILOT_AREA
 from src.data.load_data import load_dataset
 from src.features.engineering import prepare_features
@@ -25,12 +28,16 @@ from src.risk.engine import (
     risk_color,
 )
 
+load_dotenv()
+
 st.set_page_config(
-    page_title="NER Landslide AI",
+    page_title="Pahad-Guard",
     page_icon="🏔️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+inject_theme()
 
 
 @st.cache_data
@@ -98,8 +105,15 @@ def create_risk_map(dataframe: pd.DataFrame, selected_zone: str | None = None):
 
 
 def show_overview(dataframe: pd.DataFrame):
-    st.title("🏔️ NER Landslide AI")
-    st.subheader("Early Warning & Risk Monitoring System")
+    st.markdown(
+        """
+        <div class="pg-header">
+            <h1>🏔️ Pahad-Guard</h1>
+            <p>Landslide early warning &amp; risk monitoring — Sikkim pilot</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.info(
         "Prototype decision-support system for Sikkim. "
@@ -137,12 +151,21 @@ def show_overview(dataframe: pd.DataFrame):
             y="Zones",
             color="Risk level",
             color_discrete_map={
-                "LOW": "#2ca02c",
-                "MODERATE": "#f1c40f",
-                "HIGH": "#e67e22",
-                "CRITICAL": "#d62728",
+                "LOW": "#4C9A6A",
+                "MODERATE": "#D9A441",
+                "HIGH": "#DB7C3C",
+                "CRITICAL": "#C84A3E",
             },
         )
+        fig.update_layout(
+            plot_bgcolor="#171E1B",
+            paper_bgcolor="#171E1B",
+            font_color="#E9EEE9",
+            font_family="Inter",
+            margin=dict(t=10, b=10, l=10, r=10),
+        )
+        fig.update_xaxes(gridcolor="#2A332E")
+        fig.update_yaxes(gridcolor="#2A332E")
         st.plotly_chart(fig, use_container_width=True)
 
     with right:
@@ -170,24 +193,55 @@ def show_overview(dataframe: pd.DataFrame):
             averages,
             x="Feature",
             y="Value",
-            color="Feature",
+            color_discrete_sequence=["#5B8C6E"],
         )
+        fig.update_layout(
+            plot_bgcolor="#171E1B",
+            paper_bgcolor="#171E1B",
+            font_color="#E9EEE9",
+            font_family="Inter",
+            margin=dict(t=10, b=10, l=10, r=10),
+            showlegend=False,
+        )
+        fig.update_xaxes(gridcolor="#2A332E")
+        fig.update_yaxes(gridcolor="#2A332E")
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("### Highest-risk zones")
-    columns = [
-        "zone_id",
-        "risk_score",
-        "risk_level",
-        "alert_level",
-        "rainfall_24h",
-        "soil_moisture",
-        "slope",
-    ]
-    st.dataframe(
-        dataframe.sort_values("risk_score", ascending=False)[columns].head(10),
-        use_container_width=True,
-        hide_index=True,
+    top_zones = dataframe.sort_values("risk_score", ascending=False).head(10)
+
+    rows_html = ""
+    for _, row in top_zones.iterrows():
+        rows_html += (
+            "<tr>"
+            f'<td class="pg-mono">{row["zone_id"]}</td>'
+            f'<td class="pg-mono">{row["risk_score"]:.1f}</td>'
+            f"<td>{risk_badge_html(row['risk_level'])}</td>"
+            f"<td>{risk_badge_html(row['alert_level'])}</td>"
+            f'<td class="pg-mono">{row["rainfall_24h"]:.0f} mm</td>'
+            f'<td class="pg-mono">{row["soil_moisture"]:.2f}</td>'
+            f'<td class="pg-mono">{row["slope"]:.1f}°</td>'
+            "</tr>"
+        )
+
+    st.markdown(
+        f"""
+        <table class="pg-table">
+            <thead>
+                <tr>
+                    <th>Zone</th>
+                    <th>Risk score</th>
+                    <th>Risk level</th>
+                    <th>Alert</th>
+                    <th>Rainfall 24h</th>
+                    <th>Soil moisture</th>
+                    <th>Slope</th>
+                </tr>
+            </thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+        """,
+        unsafe_allow_html=True,
     )
 
 
@@ -379,6 +433,9 @@ def show_model_explanation():
 
 
 def main():
+    if not require_login():
+        return
+
     initialize_application()
 
     dataframe = get_data()
@@ -399,8 +456,16 @@ def main():
     )
 
     st.sidebar.markdown("---")
-    st.sidebar.caption(f"Pilot area: {PILOT_AREA}")
-    st.sidebar.caption("Prototype — not an official warning service")
+    st.sidebar.markdown(
+        f"""
+        <div class="pg-sidebar-meta">
+            Pilot area: {PILOT_AREA}<br>
+            Prototype — not an official warning service
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    render_logout_control()
 
     if page == "Overview":
         show_overview(dataframe)
